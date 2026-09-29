@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "gif-recorder",
+  "version": "0.1.0",
+  "identifier": "com.gifrecorder.app",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "GIF Recorder - Studio",
+        "width": 1000,
+        "height": 700,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false
+      },
+      {
+        "label": "selector",
+        "title": "GIF Recorder - Area Selector",
+        "transparent": true,
+        "fullscreen": true,
+        "decorations": false,
+        "alwaysOnTop": true
+      },
+      {
+        "label": "overlay",
+        "title": "GIF Recorder - Live Overlay",
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "icon": []
+  }
+}
