@@ -7,4 +7,16 @@ fn test_tauri_config_has_required_windows() {
     assert!(labels.contains(&"main"));
     assert!(labels.contains(&"selector"));
     assert!(labels.contains(&"overlay"));
+
+    for w in windows {
+        let label = w["label"].as_str().unwrap();
+        if label == "selector" || label == "overlay" {
+            assert_eq!(
+                w["visible"].as_bool(),
+                Some(false),
+                "{} window must have visible: false",
+                label
+            );
+        }
+    }
 }

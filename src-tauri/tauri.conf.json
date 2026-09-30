@@ -27,14 +27,16 @@
         "transparent": true,
         "fullscreen": true,
         "decorations": false,
-        "alwaysOnTop": true
+        "alwaysOnTop": true,
+        "visible": false
       },
       {
         "label": "overlay",
         "title": "GIF Recorder - Live Overlay",
         "transparent": true,
         "decorations": false,
-        "alwaysOnTop": true
+        "alwaysOnTop": true,
+        "visible": false
       }
     ],
     "security": {
