@@ -32,7 +32,7 @@ export interface VectorElement<T = Record<string, unknown>> {
   tool: VectorToolKind;
   start_ms: number;
   end_ms: number;
-  data: T;
+  data?: T;
   // Convenience properties commonly accessed directly on vector elements
   points?: number[];
   stroke?: string;
