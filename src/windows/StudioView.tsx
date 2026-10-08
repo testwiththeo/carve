@@ -23,6 +23,7 @@ import { TimelineScrubber } from '../components/timeline/TimelineScrubber';
 import { useTimelineStore } from '../stores/timelineStore';
 import { useAnnotationStore } from '../stores/annotationStore';
 import { VectorToolKind } from '../types/vector';
+import { exportRecordingToGif } from '../services/exportCompositor';
 
 export interface StudioViewProps {
   onRecordAgain?: () => void;
@@ -66,6 +67,10 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const [exportFormat, setExportFormat] = useState<'gif' | 'webp' | 'mp4'>('gif');
   const [isExporting, setIsExporting] = useState(false);
   const [exportCompleted, setExportCompleted] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportStage, setExportStage] = useState<'preparing' | 'compositing' | 'encoding' | 'complete' | 'error'>('preparing');
+  const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
+  const [exportedFilePath, setExportedFilePath] = useState<string | null>(null);
 
   // Crop options state
   const [cropWidth, setCropWidth] = useState(1280);
@@ -179,12 +184,38 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const handleStartExport = async () => {
     setIsExporting(true);
     setExportCompleted(false);
+    setExportErrorMessage(null);
+    setExportProgress(0);
+    setExportStage('preparing');
 
-    // Call native export or simulate progress
-    setTimeout(() => {
+    try {
+      const result = await exportRecordingToGif({
+        trimStartMs,
+        trimEndMs,
+        fps: exportFps,
+        quality: exportQuality,
+        scale: exportScale,
+        width: cropWidth,
+        height: cropHeight,
+        elements,
+        onProgress: (p) => {
+          setExportProgress(p.percentage);
+          setExportStage(p.stage);
+          if (p.stage === 'error' && p.errorMessage) {
+            setExportErrorMessage(p.errorMessage);
+          }
+        },
+      });
+
       setIsExporting(false);
       setExportCompleted(true);
-    }, 1500);
+      setExportedFilePath(result.outputPath);
+    } catch (err: unknown) {
+      setIsExporting(false);
+      setExportCompleted(false);
+      setExportStage('error');
+      setExportErrorMessage(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const paletteColors = [
@@ -607,6 +638,42 @@ export const StudioView: React.FC<StudioViewProps> = ({
                   <span className="text-white font-mono font-medium">{elements.length} elements</span>
                 </div>
               </div>
+
+              {/* Progress and status indicator */}
+              {(isExporting || exportCompleted || exportErrorMessage) && (
+                <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 font-medium">
+                      {exportStage === 'preparing' && 'Preparing timeline...'}
+                      {exportStage === 'compositing' && 'Compositing frames & vector annotations...'}
+                      {exportStage === 'encoding' && 'Encoding GIF with gifski...'}
+                      {exportStage === 'complete' && 'Export completed successfully!'}
+                      {exportStage === 'error' && 'Export encountered an issue'}
+                    </span>
+                    <span className="font-mono text-slate-400 font-medium">{exportProgress}%</span>
+                  </div>
+                  <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                    <div
+                      className={`h-2 rounded-full transition-all duration-200 ${
+                        exportStage === 'error'
+                          ? 'bg-red-500'
+                          : exportCompleted
+                          ? 'bg-emerald-500'
+                          : 'bg-gradient-to-r from-red-500 to-amber-500'
+                      }`}
+                      style={{ width: `${exportProgress}%` }}
+                    />
+                  </div>
+                  {exportErrorMessage && (
+                    <p className="text-[11px] text-red-400 font-medium">{exportErrorMessage}</p>
+                  )}
+                  {exportCompleted && exportedFilePath && (
+                    <p className="text-[11px] text-emerald-400 font-mono truncate">
+                      Saved: {exportedFilePath}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Actions */}
@@ -627,7 +694,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 {isExporting ? (
                   <>
                     <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Rendering GIF...</span>
+                    <span>Rendering GIF... ({exportProgress}%)</span>
                   </>
                 ) : exportCompleted ? (
                   <>

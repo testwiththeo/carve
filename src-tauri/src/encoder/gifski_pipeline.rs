@@ -4,9 +4,11 @@ use thiserror::Error;
 
 /// Options for GIF export via Gifski.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GifExportOptions {
     pub fps: u32,
     pub quality: u8,
+    #[serde(alias = "loop_count", default)]
     pub loop_count: u16,
     pub width: Option<u32>,
     pub height: Option<u32>,
