@@ -631,12 +631,43 @@ export async function exportRecordingToGif(
 
 /**
  * Convenience helper exporting from backend session cache directly.
+ * Reads frames directly from local DiskFrameCache in Rust without JSON array IPC overhead.
  */
 export async function exportSessionToGif(
   options: ExportCompositorOptions
+): Promise<ExportResult>;
+export async function exportSessionToGif(
+  exportPath: string,
+  exportOptions?: Partial<ExportCompositorOptions>,
+  trimStartMs?: number,
+  trimEndMs?: number
+): Promise<ExportResult>;
+export async function exportSessionToGif(
+  optionsOrPath: ExportCompositorOptions | string,
+  exportOptions?: Partial<ExportCompositorOptions>,
+  trimStartMs?: number,
+  trimEndMs?: number
 ): Promise<ExportResult> {
+  if (typeof optionsOrPath === 'string') {
+    return exportRecordingToGif({
+      outputPath: optionsOrPath,
+      fps: exportOptions?.fps ?? 30,
+      quality: exportOptions?.quality ?? 85,
+      scale: exportOptions?.scale ?? 1,
+      width: exportOptions?.width,
+      height: exportOptions?.height,
+      elements: exportOptions?.elements ?? [],
+      onProgress: exportOptions?.onProgress,
+      abortSignal: exportOptions?.abortSignal,
+      isCancelled: exportOptions?.isCancelled,
+      trimStartMs: trimStartMs ?? exportOptions?.trimStartMs ?? 0,
+      trimEndMs: trimEndMs ?? exportOptions?.trimEndMs ?? 5000,
+      useSessionCache: true,
+    });
+  }
+
   return exportRecordingToGif({
-    ...options,
+    ...optionsOrPath,
     useSessionCache: true,
   });
 }

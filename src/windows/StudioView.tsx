@@ -23,7 +23,7 @@ import { TimelineScrubber } from '../components/timeline/TimelineScrubber';
 import { useTimelineStore } from '../stores/timelineStore';
 import { useAnnotationStore } from '../stores/annotationStore';
 import { VectorToolKind } from '../types/vector';
-import { exportRecordingToGif } from '../services/exportCompositor';
+import { exportSessionToGif } from '../services/exportCompositor';
 
 export interface StudioViewProps {
   onRecordAgain?: () => void;
@@ -188,24 +188,29 @@ export const StudioView: React.FC<StudioViewProps> = ({
     setExportProgress(0);
     setExportStage('preparing');
 
+    const defaultFilename = `recording_${Date.now()}.gif`;
+
     try {
-      const result = await exportRecordingToGif({
-        trimStartMs,
-        trimEndMs,
-        fps: exportFps,
-        quality: exportQuality,
-        scale: exportScale,
-        width: cropWidth,
-        height: cropHeight,
-        elements,
-        onProgress: (p) => {
-          setExportProgress(p.percentage);
-          setExportStage(p.stage);
-          if (p.stage === 'error' && p.errorMessage) {
-            setExportErrorMessage(p.errorMessage);
-          }
+      const result = await exportSessionToGif(
+        defaultFilename,
+        {
+          fps: exportFps,
+          quality: exportQuality,
+          scale: exportScale,
+          width: cropWidth,
+          height: cropHeight,
+          elements,
+          onProgress: (p) => {
+            setExportProgress(p.percentage);
+            setExportStage(p.stage);
+            if (p.stage === 'error' && p.errorMessage) {
+              setExportErrorMessage(p.errorMessage);
+            }
+          },
         },
-      });
+        trimStartMs,
+        trimEndMs
+      );
 
       setIsExporting(false);
       setExportCompleted(true);

@@ -95,6 +95,10 @@ describe('timeline clamping: track move and resize helpers', () => {
     expect(clampTrackResize(4000, 6000, 100, 5000)).toEqual({ start_ms: 4000, end_ms: 5000 });
     // Start dragged before 0
     expect(clampTrackResize(-500, 2000, 100, 5000)).toEqual({ start_ms: 0, end_ms: 2000 });
+    // End handle dragged left of start + minDurationMs
+    expect(clampTrackResize(1000, 500, 100, 5000, 'end')).toEqual({ start_ms: 1000, end_ms: 1100 });
+    expect(clampTrackResize(1000, 1050, 100, 5000, 'end')).toEqual({ start_ms: 1000, end_ms: 1100 });
+    expect(clampTrackResize(1000, 2000, 100, 5000, 'end')).toEqual({ start_ms: 1000, end_ms: 2000 });
   });
 });
 

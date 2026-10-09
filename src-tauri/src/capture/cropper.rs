@@ -17,6 +17,54 @@ pub fn crop_bgra(
         });
     }
 
+    let expected_src_len = (src_width as usize)
+        .checked_mul(src_height as usize)
+        .and_then(|px| px.checked_mul(4))
+        .ok_or(CaptureError::OutOfBounds {
+            x: crop.x,
+            y: crop.y,
+            width: crop.width,
+            height: crop.height,
+            src_width,
+            src_height,
+        })?;
+
+    if source.len() != expected_src_len {
+        return Err(CaptureError::InvalidBufferSize {
+            expected: expected_src_len,
+            actual: source.len(),
+        });
+    }
+
+    let max_x = crop.x.checked_add(crop.width).ok_or(CaptureError::OutOfBounds {
+        x: crop.x,
+        y: crop.y,
+        width: crop.width,
+        height: crop.height,
+        src_width,
+        src_height,
+    })?;
+
+    let max_y = crop.y.checked_add(crop.height).ok_or(CaptureError::OutOfBounds {
+        x: crop.x,
+        y: crop.y,
+        width: crop.width,
+        height: crop.height,
+        src_width,
+        src_height,
+    })?;
+
+    if max_x > src_width || max_y > src_height {
+        return Err(CaptureError::OutOfBounds {
+            x: crop.x,
+            y: crop.y,
+            width: crop.width,
+            height: crop.height,
+            src_width,
+            src_height,
+        });
+    }
+
     let dest_len = (crop.width as usize)
         .checked_mul(crop.height as usize)
         .and_then(|px| px.checked_mul(4))

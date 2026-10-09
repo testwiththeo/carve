@@ -70,15 +70,26 @@ export function clampTrackMove(
 
 /**
  * Clamps track resizing (start/end) respecting min duration and [0, maxDurationMs] limits.
+ * When dragging right handle ('end'), guarantees end >= start + minDurationMs.
  */
 export function clampTrackResize(
   newStartMs: number,
   newEndMs: number,
   minDurationMs: number,
-  maxDurationMs: number
+  maxDurationMs: number,
+  handle: 'start' | 'end' = 'start'
 ): { start_ms: number; end_ms: number } {
   const minDur = Math.max(0, minDurationMs);
   const safeMax = Math.max(minDur, maxDurationMs);
+
+  if (handle === 'end') {
+    const start = Math.max(0, Math.min(safeMax - minDur, newStartMs));
+    const end = Math.max(start + minDur, Math.min(safeMax, newEndMs));
+    return {
+      start_ms: start,
+      end_ms: end,
+    };
+  }
 
   const end = Math.max(minDur, Math.min(safeMax, newEndMs));
   const start = Math.max(0, Math.min(end - minDur, newStartMs));

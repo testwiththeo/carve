@@ -182,7 +182,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
         const deltaMs = (deltaX / parentWidth) * safeDuration;
         const targetEndMs = Math.round(initialEndMs + deltaMs);
 
-        const clamped = clampTrackResize(startMs, targetEndMs, 50, safeDuration);
+        const clamped = clampTrackResize(startMs, targetEndMs, 50, safeDuration, 'end');
         onUpdate?.(element.id, { end_ms: clamped.end_ms });
       };
 

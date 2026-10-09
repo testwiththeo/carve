@@ -527,4 +527,42 @@ describe('exportCompositor: Native IPC Pipeline & Error Propagation', () => {
       })
     );
   });
+
+  it('supports positional overload exportSessionToGif(exportPath, exportOptions, trimStartMs, trimEndMs)', async () => {
+    const mockInvoke = vi.mocked(invoke);
+    mockInvoke.mockResolvedValueOnce('overload_export.gif');
+
+    const onProgress = vi.fn();
+    const result = await exportSessionToGif(
+      'direct_session.gif',
+      {
+        fps: 20,
+        quality: 85,
+        elements: [],
+        onProgress,
+      },
+      100,
+      500
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'export_gif',
+      expect.objectContaining({
+        outputPath: 'direct_session.gif',
+        options: expect.objectContaining({
+          fps: 20,
+          quality: 85,
+        }),
+        trimStartMs: 100,
+        trimEndMs: 500,
+      })
+    );
+    expect(onProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'encoding' })
+    );
+    expect(onProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'complete', percentage: 100 })
+    );
+  });
 });

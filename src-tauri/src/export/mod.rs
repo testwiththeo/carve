@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use image::{Rgba, RgbaImage};
 
 use crate::encoder::{encode_gif, EncoderError, GifExportOptions};
@@ -34,10 +34,10 @@ pub enum ExportError {
 }
 
 /// Managed session state holding active frame cache and vector annotations.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SessionState {
-    pub cache: Mutex<Option<DiskFrameCache>>,
-    pub ledger: Mutex<TimedVectorLedger>,
+    pub cache: Arc<Mutex<Option<DiskFrameCache>>>,
+    pub ledger: Arc<Mutex<TimedVectorLedger>>,
 }
 
 impl SessionState {
@@ -47,8 +47,8 @@ impl SessionState {
 
     pub fn with_cache(cache: DiskFrameCache) -> Self {
         Self {
-            cache: Mutex::new(Some(cache)),
-            ledger: Mutex::new(TimedVectorLedger::new()),
+            cache: Arc::new(Mutex::new(Some(cache))),
+            ledger: Arc::new(Mutex::new(TimedVectorLedger::new())),
         }
     }
 }
@@ -390,8 +390,62 @@ fn draw_line(
     }
 }
 
-/// Export a recording session by iterating through cached frames in `[trim_start_ms, trim_end_ms]`,
-/// compositing active vector elements, and encoding them into a GIF.
+/// Lazy streaming iterator reading raw frames from DiskFrameCache one frame at a time,
+/// compositing active vector annotations on the fly, and yielding (pts, RgbaImage).
+/// This keeps memory consumption strictly bounded to a single frame (~2-8 MB).
+pub struct SessionFrameIterator<'a> {
+    cache: &'a DiskFrameCache,
+    ledger: &'a TimedVectorLedger,
+    indices: std::vec::IntoIter<usize>,
+    min_trim: u64,
+    prev_pts: Option<f64>,
+    is_single_frame: bool,
+    single_duration: f64,
+    yielded_first: bool,
+    first_frame_clone: Option<(f64, RgbaImage)>,
+}
+
+impl<'a> Iterator for SessionFrameIterator<'a> {
+    type Item = (f64, RgbaImage);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.is_single_frame && self.yielded_first {
+            self.yielded_first = false;
+            return self.first_frame_clone.take();
+        }
+
+        let idx = self.indices.next()?;
+        let raw = match self.cache.read_frame(idx) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Failed to read frame at index {}: {}", idx, e);
+                return None;
+            }
+        };
+
+        let mut pts = (raw.timestamp_ms.saturating_sub(self.min_trim)) as f64 / 1000.0;
+        if let Some(prev) = self.prev_pts {
+            if pts <= prev {
+                pts = prev + 0.001;
+            }
+        }
+        self.prev_pts = Some(pts);
+
+        let active = self.ledger.active_at(raw.timestamp_ms);
+        let img = composite_frame_with_vectors(&raw, &active);
+
+        if self.is_single_frame {
+            self.yielded_first = true;
+            self.first_frame_clone = Some((pts + self.single_duration, img.clone()));
+        }
+
+        Some((pts, img))
+    }
+}
+
+/// Export a recording session by lazily iterating through cached frames in `[trim_start_ms, trim_end_ms]`,
+/// compositing active vector elements on the fly, and streaming into `encode_gif`.
+/// Guarantees bounded RAM consumption of a single frame (~2-8 MB) regardless of capture length.
 pub fn export_session_to_gif(
     cache: &DiskFrameCache,
     ledger: &TimedVectorLedger,
@@ -408,26 +462,37 @@ pub fn export_session_to_gif(
     let min_trim = trim_start_ms.min(trim_end_ms);
     let max_trim = trim_start_ms.max(trim_end_ms);
 
-    let mut frames: Vec<(f64, RgbaImage)> = Vec::new();
+    let matching_indices: Vec<usize> = cache
+        .index_entries()
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| entry.timestamp_ms >= min_trim && entry.timestamp_ms <= max_trim)
+        .map(|(i, _)| i)
+        .collect();
 
-    for i in 0..total_frames {
-        let raw = cache.read_frame(i)?;
-        if raw.timestamp_ms >= min_trim && raw.timestamp_ms <= max_trim {
-            let pts = (raw.timestamp_ms.saturating_sub(min_trim)) as f64 / 1000.0;
-            let active = ledger.active_at(raw.timestamp_ms);
-            let img = composite_frame_with_vectors(&raw, &active);
-            frames.push((pts, img));
-        }
-    }
-
-    if frames.is_empty() {
+    if matching_indices.is_empty() {
         return Err(ExportError::NoFramesInRange {
             start: min_trim,
             end: max_trim,
         });
     }
 
-    encode_gif(frames, options, output_path)?;
+    let is_single_frame = matching_indices.len() == 1;
+    let single_duration = 1.0 / (options.fps.max(1) as f64);
+
+    let frame_stream = SessionFrameIterator {
+        cache,
+        ledger,
+        indices: matching_indices.into_iter(),
+        min_trim,
+        prev_pts: None,
+        is_single_frame,
+        single_duration,
+        yielded_first: false,
+        first_frame_clone: None,
+    };
+
+    encode_gif(frame_stream, options, output_path)?;
     Ok(())
 }
 

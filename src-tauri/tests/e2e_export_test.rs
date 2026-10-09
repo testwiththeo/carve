@@ -1,7 +1,7 @@
 use gif_recorder_lib::encoder::GifExportOptions;
 use gif_recorder_lib::export::{
     composite_frame_with_vectors, encode_raw_frames, export_session_to_gif,
-    run_mock_export_pipeline, RawCompositedFrame,
+    run_mock_export_pipeline, RawCompositedFrame, SessionState,
 };
 use gif_recorder_lib::model::{TimedVectorLedger, VectorElement, VectorToolKind};
 use gif_recorder_lib::storage::{DiskFrameCache, RawFrame};
@@ -229,4 +229,42 @@ fn test_encode_raw_frames_invalid_dimensions() {
     let result = encode_raw_frames(gif_path.to_str().unwrap().to_string(), opts, frames);
     assert!(result.is_err());
     assert!(!gif_path.exists());
+}
+
+#[test]
+fn test_streaming_export_with_session_state() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_dir = tmp.path().join("session_cache");
+    let mut cache = DiskFrameCache::new(&cache_dir).unwrap();
+
+    // Generate 12 frames to verify lazy streaming
+    for i in 0..12 {
+        let frame = RawFrame::new(
+            i * 50,
+            64,
+            64,
+            vec![((i * 20) % 255) as u8; 64 * 64 * 4],
+        );
+        cache.append_frame(&frame).unwrap();
+    }
+
+    let session = SessionState::with_cache(cache);
+    let gif_path = tmp.path().join("session_streamed.gif");
+    let opts = GifExportOptions::new(20, 80, 0);
+
+    let cache_guard = session.cache.lock().unwrap();
+    let ledger_guard = session.ledger.lock().unwrap();
+
+    let res = export_session_to_gif(
+        cache_guard.as_ref().unwrap(),
+        &ledger_guard,
+        &gif_path,
+        opts,
+        0,
+        600,
+    );
+
+    assert!(res.is_ok());
+    assert!(gif_path.exists());
+    assert!(std::fs::metadata(&gif_path).unwrap().len() > 100);
 }
