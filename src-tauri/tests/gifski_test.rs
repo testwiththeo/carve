@@ -1,4 +1,4 @@
-use gif_recorder_lib::encoder::{encode_gif, EncoderError, GifExportOptions};
+use carve_lib::encoder::{encode_gif, EncoderError, GifExportOptions};
 use std::path::Path;
 
 #[test]

@@ -229,7 +229,7 @@ pub mod commands {
         lock.start(region).map_err(|e| e.to_string())?;
 
         // 1. Initialize SessionState.cache with a DiskFrameCache in a temporary directory
-        let session_dir = std::env::temp_dir().join("gif_recorder_session");
+        let session_dir = std::env::temp_dir().join("carve_session");
         let _ = std::fs::create_dir_all(&session_dir);
         let mut disk_cache = DiskFrameCache::new(&session_dir).map_err(|e| e.to_string())?;
         disk_cache.set_delete_on_drop(false);

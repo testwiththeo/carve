@@ -1,4 +1,4 @@
-use gif_recorder_lib::storage::{DiskFrameCache, RawFrame};
+use carve_lib::storage::{DiskFrameCache, RawFrame};
 
 #[test]
 fn test_disk_frame_cache_roundtrip() {

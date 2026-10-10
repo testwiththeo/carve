@@ -1,10 +1,10 @@
-use gif_recorder_lib::encoder::GifExportOptions;
-use gif_recorder_lib::export::{
+use carve_lib::encoder::GifExportOptions;
+use carve_lib::export::{
     composite_frame_with_vectors, encode_raw_frames, export_session_to_gif,
     run_mock_export_pipeline, RawCompositedFrame, SessionState,
 };
-use gif_recorder_lib::model::{TimedVectorLedger, VectorElement, VectorToolKind};
-use gif_recorder_lib::storage::{DiskFrameCache, RawFrame};
+use carve_lib::model::{TimedVectorLedger, VectorElement, VectorToolKind};
+use carve_lib::storage::{DiskFrameCache, RawFrame};
 
 #[test]
 fn test_end_to_end_export_pipeline() {

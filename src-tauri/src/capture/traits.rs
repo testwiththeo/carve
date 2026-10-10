@@ -68,6 +68,9 @@ pub enum CaptureError {
 
     #[error("Platform capture backend error: {0}")]
     BackendError(String),
+
+    #[error("Capture was cancelled by user")]
+    Cancelled,
 }
 
 /// Trait defining the lifecycle and control operations for screen capture backends.

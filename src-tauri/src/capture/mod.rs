@@ -5,6 +5,9 @@ pub mod mock;
 pub mod traits;
 pub mod windows;
 
+#[cfg(target_os = "linux")]
+pub mod portal_session;
+
 pub use cropper::{crop_bgra, crop_bgra_into};
 pub use linux::LinuxPortalCapturer;
 pub use macos::MacosCapturer;

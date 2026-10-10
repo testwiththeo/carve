@@ -1,5 +1,5 @@
-use gif_recorder_lib::capture::CaptureRegion;
-use gif_recorder_lib::window_manager::{RecordingError, RecordingState};
+use carve_lib::capture::CaptureRegion;
+use carve_lib::window_manager::{RecordingError, RecordingState};
 
 #[test]
 fn test_recording_state_transitions() {

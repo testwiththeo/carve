@@ -1,4 +1,4 @@
-use gif_recorder_lib::capture::{
+use carve_lib::capture::{
     create_platform_capturer, crop_bgra, crop_bgra_into, CaptureError, CaptureRegion,
     LinuxPortalCapturer, MacosCapturer, MockCapturer, ScreenCapturer, WindowsCapturer,
 };

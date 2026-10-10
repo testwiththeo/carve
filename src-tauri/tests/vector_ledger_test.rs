@@ -1,4 +1,4 @@
-use gif_recorder_lib::model::{TimedVectorLedger, VectorElement, VectorToolKind};
+use carve_lib::model::{TimedVectorLedger, VectorElement, VectorToolKind};
 
 #[test]
 fn test_vector_element_active_at_timestamp() {

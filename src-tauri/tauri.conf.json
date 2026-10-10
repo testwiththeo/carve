@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "gif-recorder",
+  "productName": "carve",
   "version": "0.1.0",
-  "identifier": "com.gifrecorder.app",
+  "identifier": "com.carve.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:5173",
