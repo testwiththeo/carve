@@ -6,6 +6,8 @@ pub mod traits;
 pub mod windows;
 
 #[cfg(target_os = "linux")]
+pub mod pipewire_stream;
+#[cfg(target_os = "linux")]
 pub mod portal_session;
 
 pub use cropper::{crop_bgra, crop_bgra_into};
