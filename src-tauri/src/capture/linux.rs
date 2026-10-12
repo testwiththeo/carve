@@ -20,6 +20,8 @@ pub struct LinuxPortalCapturer {
     stream_consumer: Option<PipeWireStreamConsumer>,
     #[cfg(target_os = "linux")]
     is_mock: bool,
+    #[cfg(target_os = "linux")]
+    crop_buffer: Vec<u8>,
 }
 
 impl LinuxPortalCapturer {
@@ -37,7 +39,9 @@ impl LinuxPortalCapturer {
             #[cfg(target_os = "linux")]
             stream_consumer: None,
             #[cfg(target_os = "linux")]
-            is_mock: false,
+            is_mock: true,
+            #[cfg(target_os = "linux")]
+            crop_buffer: Vec::new(),
         }
     }
 
@@ -55,6 +59,7 @@ impl LinuxPortalCapturer {
             pipewire_node_id: Some(node_id),
             stream_consumer: Some(consumer),
             is_mock: false,
+            crop_buffer: Vec::new(),
         })
     }
 
@@ -68,11 +73,12 @@ impl LinuxPortalCapturer {
             pipewire_node_id: None,
             stream_consumer: Some(consumer),
             is_mock: false,
+            crop_buffer: Vec::new(),
         }
     }
 
     #[cfg(target_os = "linux")]
-    pub fn new_mock() -> (Self, std::sync::mpsc::SyncSender<RawFrame>) {
+    pub fn new_mock() -> (Self, crate::capture::pipewire_stream::FrameSender) {
         let (consumer, sender) = PipeWireStreamConsumer::new_mock();
         let capturer = Self {
             capturing: false,
@@ -82,8 +88,19 @@ impl LinuxPortalCapturer {
             pipewire_node_id: None,
             stream_consumer: Some(consumer),
             is_mock: true,
+            crop_buffer: Vec::new(),
         };
         (capturer, sender)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn set_mock(&mut self, is_mock: bool) {
+        self.is_mock = is_mock;
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn is_mock(&self) -> bool {
+        self.is_mock
     }
 
     #[cfg(target_os = "linux")]
@@ -130,36 +147,26 @@ impl ScreenCapturer for LinuxPortalCapturer {
             }
 
             if self.stream_consumer.is_none() {
-                if self.is_mock || self.portal_session_id.is_some() {
+                if self.is_mock {
                     let (consumer, _) = PipeWireStreamConsumer::new_mock();
                     self.stream_consumer = Some(consumer);
                 } else {
-                    match crate::capture::portal_session::request_screencast_session_blocking(
+                    let stream_info = crate::capture::portal_session::request_screencast_session_blocking(
                         ashpd::desktop::screencast::CursorMode::Embedded,
                         false,
-                    ) {
-                        Ok(stream_info) => {
-                            let node_id = stream_info.node_id;
-                            let consumer = PipeWireStreamConsumer::connect(stream_info.fd, node_id)?;
-                            self.pipewire_node_id = Some(node_id);
-                            self.stream_consumer = Some(consumer);
-                        }
-                        Err(CaptureError::Cancelled) => {
-                            return Err(CaptureError::Cancelled);
-                        }
-                        Err(_) => {
-                            // If live portal is unavailable (e.g. running headlessly in tests),
-                            // fallback to mock consumer so capture loop functions predictably.
-                            let (consumer, _) = PipeWireStreamConsumer::new_mock();
-                            self.stream_consumer = Some(consumer);
-                        }
-                    }
+                    )?;
+                    let node_id = stream_info.node_id;
+                    let consumer = PipeWireStreamConsumer::connect(stream_info.fd, node_id)?;
+                    self.pipewire_node_id = Some(node_id);
+                    self.stream_consumer = Some(consumer);
                 }
             }
 
             self.capturing = true;
             self.paused = false;
             self.current_region = Some(region);
+            let dest_len = (region.width as usize) * (region.height as usize) * 4;
+            self.crop_buffer.resize(dest_len, 0);
             Ok(())
         }
         #[cfg(not(target_os = "linux"))]
@@ -180,6 +187,7 @@ impl ScreenCapturer for LinuxPortalCapturer {
             self.capturing = false;
             self.paused = false;
             self.current_region = None;
+            self.crop_buffer.clear();
 
             if let Some(mut consumer) = self.stream_consumer.take() {
                 consumer.stop();
@@ -223,6 +231,9 @@ impl ScreenCapturer for LinuxPortalCapturer {
             }
             if !self.paused {
                 return Err(CaptureError::NotPaused);
+            }
+            if let Some(consumer) = self.stream_consumer.as_ref() {
+                consumer.flush();
             }
             self.paused = false;
             Ok(())
@@ -269,17 +280,25 @@ impl ScreenCapturer for LinuxPortalCapturer {
                 {
                     Ok(Some(raw_frame))
                 } else {
-                    let cropped_bgra = crate::capture::crop_bgra(
+                    let dest_len = (region.width as usize) * (region.height as usize) * 4;
+                    if self.crop_buffer.len() != dest_len {
+                        self.crop_buffer.resize(dest_len, 0);
+                    }
+                    crate::capture::crop_bgra_into(
                         &raw_frame.bgra_data,
                         raw_frame.width,
                         raw_frame.height,
                         &region,
+                        &mut self.crop_buffer,
                     )?;
+                    let mut cropped = std::mem::replace(&mut self.crop_buffer, raw_frame.bgra_data);
+                    cropped.truncate(dest_len);
+                    self.crop_buffer.resize(dest_len, 0);
                     Ok(Some(RawFrame::new(
                         raw_frame.timestamp_ms,
                         region.width,
                         region.height,
-                        cropped_bgra,
+                        cropped,
                     )))
                 }
             } else {

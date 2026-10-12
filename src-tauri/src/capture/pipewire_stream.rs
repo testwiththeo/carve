@@ -1,6 +1,6 @@
 use std::os::fd::OwnedFd;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
+use std::sync::mpsc::TrySendError;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Instant;
@@ -15,14 +15,80 @@ use crate::storage::RawFrame;
 /// Target object property key for PipeWire streams.
 pub const PW_KEY_TARGET_OBJECT: &str = "target.object";
 
+/// Thread-safe single-frame slot storing the freshest incoming frame.
+///
+/// Ensures zero-lag queue semantics: when a new frame arrives, it overwrites
+/// and drops any unconsumed older frame.
+#[derive(Clone, Default, Debug)]
+pub struct FrameSlot(Arc<Mutex<Option<RawFrame>>>);
+
+impl FrameSlot {
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(None)))
+    }
+
+    pub fn put(&self, frame: RawFrame) {
+        if let Ok(mut lock) = self.0.lock() {
+            *lock = Some(frame);
+        }
+    }
+
+    pub fn take(&self) -> Option<RawFrame> {
+        self.0.lock().ok().and_then(|mut lock| lock.take())
+    }
+
+    pub fn flush(&self) {
+        if let Ok(mut lock) = self.0.lock() {
+            *lock = None;
+        }
+    }
+}
+
+/// Sender handle for pushing frames into the consumer's freshest-frame slot.
+#[derive(Clone, Debug)]
+pub struct FrameSender {
+    slot: FrameSlot,
+}
+
+impl FrameSender {
+    pub fn try_send(&self, frame: RawFrame) -> Result<(), TrySendError<RawFrame>> {
+        self.slot.put(frame);
+        Ok(())
+    }
+
+    pub fn send(&self, frame: RawFrame) -> Result<(), TrySendError<RawFrame>> {
+        self.try_send(frame)
+    }
+}
+
+/// Normalizes SPA video format pixel data into 32-bit BGRA in-place.
+///
+/// Handles `VideoFormat::RGBA` (swapping R & B channels), `VideoFormat::BGRx`
+/// (setting alpha to 255), and `VideoFormat::RGBx` (swapping R & B channels and setting alpha to 255).
+pub fn convert_format_to_bgra(bgra: &mut [u8], fmt: spa::param::video::VideoFormat) {
+    if fmt == spa::param::video::VideoFormat::RGBA {
+        for px in bgra.as_chunks_mut::<4>().0 {
+            px.swap(0, 2);
+        }
+    } else if fmt == spa::param::video::VideoFormat::BGRx {
+        for px in bgra.as_chunks_mut::<4>().0 {
+            px[3] = 255;
+        }
+    } else if fmt == spa::param::video::VideoFormat::RGBx {
+        for px in bgra.as_chunks_mut::<4>().0 {
+            px.swap(0, 2);
+            px[3] = 255;
+        }
+    }
+}
+
 /// Background PipeWire video stream consumer.
 ///
 /// Runs a dedicated OS worker thread driving a `pipewire::MainLoop`, negotiating
-/// SPA video format (`BGRx` / `RGBA`), dequeuing incoming stream buffers, and pushing
-/// converted 32-bit BGRA `RawFrame`s into a bounded channel of capacity 2.
+/// SPA video format (`BGRx` / `BGRA` / `RGBA` / `RGBx`), dequeuing incoming stream buffers,
+/// and storing the freshest 32-bit BGRA `RawFrame` into a zero-lag `FrameSlot`.
 pub struct PipeWireStreamConsumer {
-    sender: SyncSender<RawFrame>,
-    receiver: Mutex<Receiver<RawFrame>>,
+    frame_slot: FrameSlot,
     stop_signal: Arc<AtomicBool>,
     worker_handle: Option<JoinHandle<()>>,
     pw_sender: Option<pw::channel::Sender<()>>,
@@ -38,7 +104,7 @@ impl std::fmt::Debug for PipeWireStreamConsumer {
 
 struct UserData {
     format: spa::param::video::VideoInfoRaw,
-    sender: SyncSender<RawFrame>,
+    frame_slot: FrameSlot,
     stop_signal: Arc<AtomicBool>,
     start_time: Instant,
 }
@@ -51,12 +117,12 @@ impl PipeWireStreamConsumer {
     pub fn connect(fd: OwnedFd, node_id: u32) -> Result<Self, CaptureError> {
         pw::init();
 
-        let (sender, receiver) = std::sync::mpsc::sync_channel::<RawFrame>(2);
+        let frame_slot = FrameSlot::new();
         let stop_signal = Arc::new(AtomicBool::new(false));
         let (pw_sender, pw_receiver) = pw::channel::channel::<()>();
         let (startup_tx, startup_rx) = std::sync::mpsc::sync_channel::<Result<(), CaptureError>>(1);
 
-        let thread_sender = sender.clone();
+        let thread_slot = frame_slot.clone();
         let thread_stop = Arc::clone(&stop_signal);
 
         let worker_handle = std::thread::Builder::new()
@@ -65,7 +131,7 @@ impl PipeWireStreamConsumer {
                 run_pipewire_loop(
                     fd,
                     node_id,
-                    thread_sender,
+                    thread_slot,
                     thread_stop,
                     pw_receiver,
                     startup_tx,
@@ -75,8 +141,7 @@ impl PipeWireStreamConsumer {
 
         match startup_rx.recv() {
             Ok(Ok(())) => Ok(Self {
-                sender,
-                receiver: Mutex::new(receiver),
+                frame_slot,
                 stop_signal,
                 worker_handle: Some(worker_handle),
                 pw_sender: Some(pw_sender),
@@ -95,13 +160,14 @@ impl PipeWireStreamConsumer {
     }
 
     /// Create an in-memory mock consumer for testing without hardware PipeWire.
-    pub fn new_mock() -> (Self, SyncSender<RawFrame>) {
-        let (sender, receiver) = std::sync::mpsc::sync_channel::<RawFrame>(2);
+    pub fn new_mock() -> (Self, FrameSender) {
+        let frame_slot = FrameSlot::new();
         let stop_signal = Arc::new(AtomicBool::new(false));
-        let test_sender = sender.clone();
+        let test_sender = FrameSender {
+            slot: frame_slot.clone(),
+        };
         let consumer = Self {
-            sender,
-            receiver: Mutex::new(receiver),
+            frame_slot,
             stop_signal,
             worker_handle: None,
             pw_sender: None,
@@ -109,21 +175,21 @@ impl PipeWireStreamConsumer {
         (consumer, test_sender)
     }
 
-    /// Retrieve the freshest frame from the bounded channel, draining any older queued frames.
+    /// Retrieve the freshest frame from the consumer slot, clearing it so subsequent calls return None
+    /// until a new frame arrives.
     pub fn recv_frame(&self) -> Option<RawFrame> {
-        let Ok(rx) = self.receiver.lock() else {
-            return None;
-        };
-        let mut latest = rx.try_recv().ok()?;
-        while let Ok(newer) = rx.try_recv() {
-            latest = newer;
-        }
-        Some(latest)
+        self.frame_slot.take()
     }
 
-    /// Send a synthetic frame into the bounded queue.
+    /// Flush/drain any queued frame in the slot.
+    pub fn flush(&self) {
+        self.frame_slot.flush();
+    }
+
+    /// Send a synthetic frame into the slot (replacing any older frame).
     pub fn send_synthetic_frame(&self, frame: RawFrame) -> Result<(), TrySendError<RawFrame>> {
-        self.sender.try_send(frame)
+        self.frame_slot.put(frame);
+        Ok(())
     }
 
     /// Check whether the consumer has been signaled to stop.
@@ -152,7 +218,7 @@ impl Drop for PipeWireStreamConsumer {
 fn run_pipewire_loop(
     fd: OwnedFd,
     node_id: u32,
-    sender: SyncSender<RawFrame>,
+    frame_slot: FrameSlot,
     stop_signal: Arc<AtomicBool>,
     pw_receiver: pw::channel::Receiver<()>,
     startup_tx: std::sync::mpsc::SyncSender<Result<(), CaptureError>>,
@@ -211,7 +277,7 @@ fn run_pipewire_loop(
 
     let user_data = UserData {
         format: Default::default(),
-        sender,
+        frame_slot,
         stop_signal,
         start_time: Instant::now(),
     };
@@ -290,19 +356,11 @@ fn run_pipewire_loop(
             };
 
             let fmt = user_data.format.format();
-            if fmt == pw::spa::param::video::VideoFormat::RGBA {
-                for px in bgra.as_chunks_mut::<4>().0 {
-                    px.swap(0, 2);
-                }
-            } else if fmt == pw::spa::param::video::VideoFormat::BGRx {
-                for px in bgra.as_chunks_mut::<4>().0 {
-                    px[3] = 255;
-                }
-            }
+            convert_format_to_bgra(&mut bgra, fmt);
 
             let timestamp_ms = user_data.start_time.elapsed().as_millis() as u64;
             let raw_frame = RawFrame::new(timestamp_ms, width, height, bgra);
-            let _ = user_data.sender.try_send(raw_frame);
+            user_data.frame_slot.put(raw_frame);
         })
         .register()
     {

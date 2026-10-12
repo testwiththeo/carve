@@ -1,9 +1,10 @@
 #[cfg(target_os = "linux")]
 mod pipewire_capture_tests {
-    use carve_lib::capture::pipewire_stream::PipeWireStreamConsumer;
+    use carve_lib::capture::pipewire_stream::{convert_format_to_bgra, PipeWireStreamConsumer};
     use carve_lib::capture::traits::{CaptureError, CaptureRegion, ScreenCapturer};
     use carve_lib::capture::LinuxPortalCapturer;
     use carve_lib::storage::RawFrame;
+    use pipewire::spa::param::video::VideoFormat;
 
     fn generate_test_frame(timestamp_ms: u64, width: u32, height: u32) -> RawFrame {
         let mut bgra = vec![0u8; (width as usize) * (height as usize) * 4];
@@ -177,37 +178,117 @@ mod pipewire_capture_tests {
         // When paused, capture_frame returns Ok(None)
         assert_eq!(capturer.capture_frame().unwrap(), None);
 
-        // Resume and frame can be consumed
+        // Resume and stale frames are flushed
         capturer.resume_capture().expect("resume failed");
         assert!(!capturer.is_paused());
-        assert!(capturer.capture_frame().unwrap().is_some());
+        assert_eq!(capturer.capture_frame().unwrap(), None);
+
+        // Subsequent frame sent after resume is received
+        let fresh_frame = generate_test_frame(600, 100, 100);
+        sender.try_send(fresh_frame).expect("try_send failed");
+        let received = capturer.capture_frame().unwrap().expect("expected fresh frame");
+        assert_eq!(received.timestamp_ms, 600);
 
         capturer.stop_capture().expect("stop_capture failed");
     }
 
     #[test]
-    fn test_pipewire_stream_consumer_queue_bounds() {
+    fn test_linux_portal_capturer_flush_on_resume() {
+        let (mut capturer, sender) = LinuxPortalCapturer::new_mock();
+        let region = CaptureRegion::new(0, 0, 100, 100);
+        capturer.start_capture(region).expect("start_capture failed");
+
+        // Send a frame while running
+        sender
+            .try_send(generate_test_frame(100, 100, 100))
+            .expect("try_send failed");
+
+        // Pause capture
+        capturer.pause_capture().expect("pause failed");
+
+        // Send frame during pause
+        sender
+            .try_send(generate_test_frame(200, 100, 100))
+            .expect("try_send failed");
+
+        // While paused, capture_frame returns None
+        assert_eq!(capturer.capture_frame().unwrap(), None);
+
+        // Resume capture flushes the stale frame
+        capturer.resume_capture().expect("resume failed");
+        assert_eq!(capturer.capture_frame().unwrap(), None);
+
+        // Send new frame after resume
+        sender
+            .try_send(generate_test_frame(300, 100, 100))
+            .expect("try_send failed");
+        let frame = capturer.capture_frame().unwrap().expect("expected frame");
+        assert_eq!(frame.timestamp_ms, 300);
+
+        capturer.stop_capture().expect("stop_capture failed");
+    }
+
+    #[test]
+    fn test_pipewire_stream_consumer_freshest_frame_semantics() {
         let (consumer, sender) = PipeWireStreamConsumer::new_mock();
 
-        let frame1 = generate_test_frame(1, 64, 64);
-        let frame2 = generate_test_frame(2, 64, 64);
-        let frame3 = generate_test_frame(3, 64, 64);
+        let frame1 = generate_test_frame(10, 64, 64);
+        let frame2 = generate_test_frame(20, 64, 64);
+        let frame3 = generate_test_frame(30, 64, 64);
 
-        // Channel capacity is 2
+        // Sending frames successively overwrites older frames
         assert!(sender.try_send(frame1).is_ok());
         assert!(sender.try_send(frame2).is_ok());
+        assert!(sender.try_send(frame3).is_ok());
 
-        // 3rd frame exceeds capacity of 2; try_send returns Full error, bounding queue depth
-        let send_res = sender.try_send(frame3);
-        assert!(send_res.is_err());
-        assert!(matches!(send_res, Err(std::sync::mpsc::TrySendError::Full(_))));
-
-        // Drain / receive freshest frame
+        // Drain / receive freshest frame (timestamp 30)
         let latest = consumer.recv_frame().expect("expected frame from consumer");
-        assert_eq!(latest.timestamp_ms, 2);
+        assert_eq!(latest.timestamp_ms, 30);
 
         // Queue is now empty
         assert!(consumer.recv_frame().is_none());
+
+        // Test flush clears queued frame
+        let frame4 = generate_test_frame(40, 64, 64);
+        assert!(sender.try_send(frame4).is_ok());
+        consumer.flush();
+        assert!(consumer.recv_frame().is_none());
+    }
+
+    #[test]
+    fn test_pipewire_format_conversion_rgbx_and_others() {
+        // RGBx: [R, G, B, X] -> [B, G, R, 255]
+        let mut rgbx_buf = vec![10, 20, 30, 0, 100, 150, 200, 50];
+        convert_format_to_bgra(&mut rgbx_buf, VideoFormat::RGBx);
+        assert_eq!(&rgbx_buf[0..4], &[30, 20, 10, 255]);
+        assert_eq!(&rgbx_buf[4..8], &[200, 150, 100, 255]);
+
+        // RGBA: [R, G, B, A] -> [B, G, R, A]
+        let mut rgba_buf = vec![10, 20, 30, 128];
+        convert_format_to_bgra(&mut rgba_buf, VideoFormat::RGBA);
+        assert_eq!(&rgba_buf, &[30, 20, 10, 128]);
+
+        // BGRx: [B, G, R, X] -> [B, G, R, 255]
+        let mut bgrx_buf = vec![30, 20, 10, 0];
+        convert_format_to_bgra(&mut bgrx_buf, VideoFormat::BGRx);
+        assert_eq!(&bgrx_buf, &[30, 20, 10, 255]);
+
+        // BGRA: [B, G, R, A] -> unchanged
+        let mut bgra_buf = vec![30, 20, 10, 200];
+        convert_format_to_bgra(&mut bgra_buf, VideoFormat::BGRA);
+        assert_eq!(&bgra_buf, &[30, 20, 10, 200]);
+    }
+
+    #[test]
+    fn test_linux_portal_capturer_propagates_portal_error() {
+        let mut capturer = LinuxPortalCapturer::new(); // is_mock is false
+        assert!(!capturer.is_mock());
+
+        let res = capturer.start_capture(CaptureRegion::new(0, 0, 100, 100));
+        // On a headless or live system without interactive user portal authorization,
+        // start_capture must propagate the actual CaptureError rather than falling back to mock
+        assert!(res.is_err());
+        assert!(!capturer.is_capturing());
     }
 
     #[test]
