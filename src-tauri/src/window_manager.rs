@@ -460,6 +460,11 @@ pub fn set_overlay_clickthrough<R: Runtime>(
         .get_webview_window("overlay")
         .ok_or_else(|| RecordingError::WindowError("Overlay window not found".to_string()))?;
 
+    // On Linux GTK, setting cursor ignore on an unshown or hidden window panics in tao
+    if !overlay.is_visible().unwrap_or(false) {
+        return Ok(());
+    }
+
     overlay
         .set_ignore_cursor_events(enabled)
         .map_err(|e| RecordingError::WindowError(e.to_string()))?;
