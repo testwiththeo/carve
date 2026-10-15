@@ -137,7 +137,9 @@ impl PipeWireStreamConsumer {
                     startup_tx,
                 );
             })
-            .map_err(|e| CaptureError::BackendError(format!("Failed to spawn PipeWire thread: {e}")))?;
+            .map_err(|e| {
+                CaptureError::BackendError(format!("Failed to spawn PipeWire thread: {e}"))
+            })?;
 
         match startup_rx.recv() {
             Ok(Ok(())) => Ok(Self {

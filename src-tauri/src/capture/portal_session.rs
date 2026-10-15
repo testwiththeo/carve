@@ -1,7 +1,7 @@
-use std::os::fd::OwnedFd;
+use crate::capture::traits::CaptureError;
 use ashpd::desktop::screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType};
 use ashpd::desktop::{PersistMode, ResponseError};
-use crate::capture::traits::CaptureError;
+use std::os::fd::OwnedFd;
 
 /// Information about a successfully negotiated Portal ScreenCast stream.
 #[derive(Debug)]
@@ -69,16 +69,12 @@ pub async fn request_screencast_session_with_options(
     let start_request = proxy.start(&session, None, Default::default()).await?;
     let response = start_request.response()?;
 
-    let stream = response
-        .streams()
-        .first()
-        .ok_or_else(|| CaptureError::BackendError("Portal returned no screencast streams".to_string()))?;
+    let stream = response.streams().first().ok_or_else(|| {
+        CaptureError::BackendError("Portal returned no screencast streams".to_string())
+    })?;
 
     let (width, height) = match stream.size() {
-        Some((w, h)) => (
-            u32::try_from(w).ok(),
-            u32::try_from(h).ok(),
-        ),
+        Some((w, h)) => (u32::try_from(w).ok(), u32::try_from(h).ok()),
         None => (None, None),
     };
 
@@ -103,11 +99,12 @@ pub fn request_screencast_session_blocking(
 ) -> Result<PortalStreamInfo, CaptureError> {
     match tokio::runtime::Handle::try_current() {
         Ok(handle) => match handle.runtime_flavor() {
-            tokio::runtime::RuntimeFlavor::MultiThread => {
-                tokio::task::block_in_place(|| {
-                    handle.block_on(request_screencast_session_with_options(cursor_mode, persist))
-                })
-            }
+            tokio::runtime::RuntimeFlavor::MultiThread => tokio::task::block_in_place(|| {
+                handle.block_on(request_screencast_session_with_options(
+                    cursor_mode,
+                    persist,
+                ))
+            }),
             _ => std::thread::spawn(move || {
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
@@ -115,19 +112,29 @@ pub fn request_screencast_session_blocking(
                     .map_err(|e| {
                         CaptureError::BackendError(format!("Failed to create Tokio runtime: {e}"))
                     })?;
-                rt.block_on(request_screencast_session_with_options(cursor_mode, persist))
+                rt.block_on(request_screencast_session_with_options(
+                    cursor_mode,
+                    persist,
+                ))
             })
             .join()
             .map_err(|_| {
-                CaptureError::BackendError("Blocking screencast request thread panicked".to_string())
+                CaptureError::BackendError(
+                    "Blocking screencast request thread panicked".to_string(),
+                )
             })?,
         },
         Err(_) => {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| CaptureError::BackendError(format!("Failed to create Tokio runtime: {e}")))?;
-            rt.block_on(request_screencast_session_with_options(cursor_mode, persist))
+                .map_err(|e| {
+                    CaptureError::BackendError(format!("Failed to create Tokio runtime: {e}"))
+                })?;
+            rt.block_on(request_screencast_session_with_options(
+                cursor_mode,
+                persist,
+            ))
         }
     }
 }

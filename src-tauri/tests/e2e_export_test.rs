@@ -34,12 +34,7 @@ fn test_export_pipeline_custom_fps_and_quality() {
     let tmp = tempfile::tempdir().unwrap();
     let mut cache = DiskFrameCache::new(tmp.path().join("cache")).unwrap();
     for i in 0..6 {
-        let frame = RawFrame::new(
-            i * 100,
-            64,
-            64,
-            vec![((i * 40) % 255) as u8; 64 * 64 * 4],
-        );
+        let frame = RawFrame::new(i * 100, 64, 64, vec![((i * 40) % 255) as u8; 64 * 64 * 4]);
         cache.append_frame(&frame).unwrap();
     }
     let ledger = TimedVectorLedger::new();
@@ -57,12 +52,7 @@ fn test_export_pipeline_with_vector_annotations() {
     let tmp = tempfile::tempdir().unwrap();
     let mut cache = DiskFrameCache::new(tmp.path().join("cache")).unwrap();
     for i in 0..8 {
-        let frame = RawFrame::new(
-            i * 100,
-            80,
-            80,
-            vec![200; 80 * 80 * 4],
-        );
+        let frame = RawFrame::new(i * 100, 80, 80, vec![200; 80 * 80 * 4]);
         cache.append_frame(&frame).unwrap();
     }
 
@@ -117,12 +107,7 @@ fn test_export_pipeline_trim_boundaries() {
     let tmp = tempfile::tempdir().unwrap();
     let mut cache = DiskFrameCache::new(tmp.path().join("cache")).unwrap();
     for i in 0..10 {
-        let frame = RawFrame::new(
-            i * 100,
-            64,
-            64,
-            vec![(i * 25) as u8; 64 * 64 * 4],
-        );
+        let frame = RawFrame::new(i * 100, 64, 64, vec![(i * 25) as u8; 64 * 64 * 4]);
         cache.append_frame(&frame).unwrap();
     }
     let ledger = TimedVectorLedger::new();
@@ -239,12 +224,7 @@ fn test_streaming_export_with_session_state() {
 
     // Generate 12 frames to verify lazy streaming
     for i in 0..12 {
-        let frame = RawFrame::new(
-            i * 50,
-            64,
-            64,
-            vec![((i * 20) % 255) as u8; 64 * 64 * 4],
-        );
+        let frame = RawFrame::new(i * 50, 64, 64, vec![((i * 20) % 255) as u8; 64 * 64 * 4]);
         cache.append_frame(&frame).unwrap();
     }
 

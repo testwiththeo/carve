@@ -36,23 +36,29 @@ pub fn crop_bgra(
         });
     }
 
-    let max_x = crop.x.checked_add(crop.width).ok_or(CaptureError::OutOfBounds {
-        x: crop.x,
-        y: crop.y,
-        width: crop.width,
-        height: crop.height,
-        src_width,
-        src_height,
-    })?;
+    let max_x = crop
+        .x
+        .checked_add(crop.width)
+        .ok_or(CaptureError::OutOfBounds {
+            x: crop.x,
+            y: crop.y,
+            width: crop.width,
+            height: crop.height,
+            src_width,
+            src_height,
+        })?;
 
-    let max_y = crop.y.checked_add(crop.height).ok_or(CaptureError::OutOfBounds {
-        x: crop.x,
-        y: crop.y,
-        width: crop.width,
-        height: crop.height,
-        src_width,
-        src_height,
-    })?;
+    let max_y = crop
+        .y
+        .checked_add(crop.height)
+        .ok_or(CaptureError::OutOfBounds {
+            x: crop.x,
+            y: crop.y,
+            width: crop.width,
+            height: crop.height,
+            src_width,
+            src_height,
+        })?;
 
     if max_x > src_width || max_y > src_height {
         return Err(CaptureError::OutOfBounds {
@@ -118,23 +124,29 @@ pub fn crop_bgra_into(
         });
     }
 
-    let max_x = crop.x.checked_add(crop.width).ok_or(CaptureError::OutOfBounds {
-        x: crop.x,
-        y: crop.y,
-        width: crop.width,
-        height: crop.height,
-        src_width,
-        src_height,
-    })?;
+    let max_x = crop
+        .x
+        .checked_add(crop.width)
+        .ok_or(CaptureError::OutOfBounds {
+            x: crop.x,
+            y: crop.y,
+            width: crop.width,
+            height: crop.height,
+            src_width,
+            src_height,
+        })?;
 
-    let max_y = crop.y.checked_add(crop.height).ok_or(CaptureError::OutOfBounds {
-        x: crop.x,
-        y: crop.y,
-        width: crop.width,
-        height: crop.height,
-        src_width,
-        src_height,
-    })?;
+    let max_y = crop
+        .y
+        .checked_add(crop.height)
+        .ok_or(CaptureError::OutOfBounds {
+            x: crop.x,
+            y: crop.y,
+            width: crop.width,
+            height: crop.height,
+            src_width,
+            src_height,
+        })?;
 
     if max_x > src_width || max_y > src_height {
         return Err(CaptureError::OutOfBounds {

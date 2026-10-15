@@ -1,10 +1,10 @@
-use std::path::Path;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use tauri::State;
 
+use super::{composite_frame_with_vectors, export_session_to_gif, SessionState};
 use crate::encoder::GifExportOptions;
 use crate::model::{TimedVectorLedger, VectorElement};
-use super::{composite_frame_with_vectors, export_session_to_gif, SessionState};
 
 /// Response structure returning the composited RGBA frame and active vector elements.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,8 +53,15 @@ pub fn export_gif(
         .map_err(|_| "Failed to lock vector ledger".to_string())?;
 
     let out_path = Path::new(&output_path);
-    export_session_to_gif(cache, &ledger_guard, out_path, options, trim_start_ms, trim_end_ms)
-        .map_err(|e| e.to_string())?;
+    export_session_to_gif(
+        cache,
+        &ledger_guard,
+        out_path,
+        options,
+        trim_start_ms,
+        trim_end_ms,
+    )
+    .map_err(|e| e.to_string())?;
 
     Ok(output_path)
 }
@@ -75,9 +82,7 @@ pub fn render_frame_with_vectors(
         .as_ref()
         .ok_or_else(|| "No recorded frames available in session cache".to_string())?;
 
-    let frame = cache
-        .read_frame(frame_index)
-        .map_err(|e| e.to_string())?;
+    let frame = cache.read_frame(frame_index).map_err(|e| e.to_string())?;
 
     let ledger_guard = state
         .ledger
@@ -136,8 +141,12 @@ pub fn encode_raw_frames(
         }
         prev_pts = Some(pts);
 
-        let img = image::RgbaImage::from_raw(f.width, f.height, f.rgba_data)
-            .ok_or_else(|| format!("Invalid image dimensions {}x{} for raw buffer size", f.width, f.height))?;
+        let img = image::RgbaImage::from_raw(f.width, f.height, f.rgba_data).ok_or_else(|| {
+            format!(
+                "Invalid image dimensions {}x{} for raw buffer size",
+                f.width, f.height
+            )
+        })?;
         img_frames.push((pts, img));
     }
 
@@ -148,8 +157,7 @@ pub fn encode_raw_frames(
     }
 
     let out_path = Path::new(&output_path);
-    crate::encoder::encode_gif(img_frames, options, out_path)
-        .map_err(|e| e.to_string())?;
+    crate::encoder::encode_gif(img_frames, options, out_path).map_err(|e| e.to_string())?;
 
     Ok(output_path)
 }

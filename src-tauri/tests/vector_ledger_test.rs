@@ -110,7 +110,6 @@ fn test_ledger_serde_roundtrip() {
     });
 
     let json = serde_json::to_string(&ledger).expect("serialize ledger");
-    let deserialized: TimedVectorLedger =
-        serde_json::from_str(&json).expect("deserialize ledger");
+    let deserialized: TimedVectorLedger = serde_json::from_str(&json).expect("deserialize ledger");
     assert_eq!(ledger, deserialized);
 }

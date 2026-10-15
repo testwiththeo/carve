@@ -21,6 +21,10 @@ struct ActiveCapture {
 static ACTIVE_CAPTURE: Mutex<Option<ActiveCapture>> = Mutex::new(None);
 
 /// Errors that can occur during recording session management and overlay manipulation.
+///
+/// Serialized across the Tauri boundary as a flat, stable payload so the
+/// frontend can branch on the machine tag while still showing the message:
+/// `{ "kind": "<machine tag>", "message": "<human message>" }`.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RecordingError {
     #[error("Capture region is invalid: width and height must be greater than 0")]
@@ -37,6 +41,39 @@ pub enum RecordingError {
     NotRequestingPortal,
     #[error("Window error: {0}")]
     WindowError(String),
+    /// Frame-capture backend failure during session startup or teardown.
+    #[error(transparent)]
+    Capture(#[from] CaptureError),
+    /// Unrecoverable internal failure (poisoned lock, failed runtime task, cache init I/O).
+    #[error("Internal error: {0}")]
+    Internal(String),
+}
+
+impl RecordingError {
+    /// Stable machine-readable tag exposed to the frontend as `error.kind`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::InvalidRegion => "invalid_region",
+            Self::AlreadyRecording => "already_recording",
+            Self::NotRecording => "not_recording",
+            Self::NotActiveRecording => "not_active_recording",
+            Self::NotPaused => "not_paused",
+            Self::NotRequestingPortal => "not_requesting_portal",
+            Self::WindowError(_) => "window_error",
+            Self::Capture(_) => "capture",
+            Self::Internal(_) => "internal",
+        }
+    }
+}
+
+impl serde::Serialize for RecordingError {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("RecordingError", 2)?;
+        s.serialize_field("kind", self.kind())?;
+        s.serialize_field("message", &self.to_string())?;
+        s.end()
+    }
 }
 
 /// Represents the active capture lifecycle state machine.
@@ -249,9 +286,8 @@ pub struct PortalAcquisition {
 }
 
 #[cfg(target_os = "linux")]
-type ConnectFn = Box<
-    dyn FnOnce(PortalStreamInfo) -> Result<Box<dyn ScreenCapturer>, CaptureError> + Send,
->;
+type ConnectFn =
+    Box<dyn FnOnce(PortalStreamInfo) -> Result<Box<dyn ScreenCapturer>, CaptureError> + Send>;
 
 #[cfg(target_os = "linux")]
 impl PortalAcquisition {
@@ -491,7 +527,7 @@ pub mod commands {
         state: State<'_, Arc<Mutex<RecordingState>>>,
         session: State<'_, SessionState>,
         region: CaptureRegion,
-    ) -> Result<(), String> {
+    ) -> Result<(), RecordingError> {
         let shared_state = state.inner().clone();
 
         let has_display =
@@ -516,20 +552,19 @@ pub mod commands {
             start_recording_session(&shared_state, region, acquisition)
         })
         .await
-        .map_err(|e| format!("Capture startup task failed: {e}"))?
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| RecordingError::Internal(format!("Capture startup task failed: {e}")))??;
 
         // 1. Initialize SessionState.cache with a DiskFrameCache in a temporary directory
         let session_dir = std::env::temp_dir().join("carve_session");
         let _ = std::fs::create_dir_all(&session_dir);
-        let mut disk_cache = DiskFrameCache::new(&session_dir).map_err(|e| e.to_string())?;
+        let mut disk_cache = DiskFrameCache::new(&session_dir)
+            .map_err(|e| RecordingError::Internal(format!("Failed to init frame cache: {e}")))?;
         disk_cache.set_delete_on_drop(false);
 
         {
-            let mut cache_guard = session
-                .cache
-                .lock()
-                .map_err(|_| "Failed to lock session cache".to_string())?;
+            let mut cache_guard = session.cache.lock().map_err(|_| {
+                RecordingError::Internal("Failed to lock session cache".to_string())
+            })?;
             *cache_guard = Some(disk_cache);
         }
 
@@ -598,7 +633,7 @@ pub mod commands {
         }
 
         // Show live overlay over the selected region
-        show_overlay(&app, region).map_err(|e| e.to_string())?;
+        show_overlay(&app, region)?;
         Ok(())
     }
 
@@ -608,11 +643,11 @@ pub mod commands {
         app: AppHandle<R>,
         state: State<'_, Arc<Mutex<RecordingState>>>,
         _session: State<'_, SessionState>,
-    ) -> Result<CaptureRegion, String> {
+    ) -> Result<CaptureRegion, RecordingError> {
         let mut lock = state
             .lock()
-            .map_err(|_| "Failed to lock recording state".to_string())?;
-        let region = lock.stop().map_err(|e| e.to_string())?;
+            .map_err(|_| RecordingError::Internal("Failed to lock recording state".to_string()))?;
+        let region = lock.stop()?;
 
         // Stop the capturer loop and wait for completion
         if let Ok(mut active_guard) = ACTIVE_CAPTURE.lock() {
@@ -630,11 +665,13 @@ pub mod commands {
 
     /// Pauses active recording.
     #[tauri::command]
-    pub fn pause_recording(state: State<'_, Arc<Mutex<RecordingState>>>) -> Result<(), String> {
+    pub fn pause_recording(
+        state: State<'_, Arc<Mutex<RecordingState>>>,
+    ) -> Result<(), RecordingError> {
         let mut lock = state
             .lock()
-            .map_err(|_| "Failed to lock recording state".to_string())?;
-        lock.pause().map_err(|e| e.to_string())?;
+            .map_err(|_| RecordingError::Internal("Failed to lock recording state".to_string()))?;
+        lock.pause()?;
 
         if let Ok(active_guard) = ACTIVE_CAPTURE.lock() {
             if let Some(ref active) = *active_guard {
@@ -647,11 +684,13 @@ pub mod commands {
 
     /// Resumes paused recording.
     #[tauri::command]
-    pub fn resume_recording(state: State<'_, Arc<Mutex<RecordingState>>>) -> Result<(), String> {
+    pub fn resume_recording(
+        state: State<'_, Arc<Mutex<RecordingState>>>,
+    ) -> Result<(), RecordingError> {
         let mut lock = state
             .lock()
-            .map_err(|_| "Failed to lock recording state".to_string())?;
-        lock.resume().map_err(|e| e.to_string())?;
+            .map_err(|_| RecordingError::Internal("Failed to lock recording state".to_string()))?;
+        lock.resume()?;
 
         if let Ok(active_guard) = ACTIVE_CAPTURE.lock() {
             if let Some(ref active) = *active_guard {
@@ -667,8 +706,8 @@ pub mod commands {
     pub fn set_overlay_clickthrough<R: Runtime>(
         app: AppHandle<R>,
         enabled: bool,
-    ) -> Result<(), String> {
-        super::set_overlay_clickthrough(&app, enabled).map_err(|e| e.to_string())
+    ) -> Result<(), RecordingError> {
+        super::set_overlay_clickthrough(&app, enabled)
     }
 }
 

@@ -88,7 +88,9 @@ mod pipewire_capture_tests {
     fn test_linux_portal_capturer_frame_receiving_full_frame() {
         let (mut capturer, sender) = LinuxPortalCapturer::new_mock();
         let region = CaptureRegion::new(0, 0, 320, 240);
-        capturer.start_capture(region).expect("start_capture failed");
+        capturer
+            .start_capture(region)
+            .expect("start_capture failed");
 
         // Before sending any frames, capture_frame returns Ok(None)
         assert_eq!(capturer.capture_frame().unwrap(), None);
@@ -115,13 +117,18 @@ mod pipewire_capture_tests {
         let (mut capturer, sender) = LinuxPortalCapturer::new_mock();
         // Crop a 100x80 subregion at offset (50, 40)
         let region = CaptureRegion::new(50, 40, 100, 80);
-        capturer.start_capture(region).expect("start_capture failed");
+        capturer
+            .start_capture(region)
+            .expect("start_capture failed");
 
         // Source frame is 640x480
         let src_frame = generate_test_frame(250, 640, 480);
         sender.try_send(src_frame.clone()).expect("try_send failed");
 
-        let cropped = capturer.capture_frame().unwrap().expect("expected cropped frame");
+        let cropped = capturer
+            .capture_frame()
+            .unwrap()
+            .expect("expected cropped frame");
         assert_eq!(cropped.timestamp_ms, 250);
         assert_eq!(cropped.width, 100);
         assert_eq!(cropped.height, 80);
@@ -151,7 +158,9 @@ mod pipewire_capture_tests {
         let (mut capturer, sender) = LinuxPortalCapturer::new_mock();
         // Region exceeds incoming frame dimensions
         let region = CaptureRegion::new(100, 100, 200, 200);
-        capturer.start_capture(region).expect("start_capture failed");
+        capturer
+            .start_capture(region)
+            .expect("start_capture failed");
 
         // Incoming frame is only 150x150, so crop region (100+200=300 > 150) is out of bounds
         let small_frame = generate_test_frame(300, 150, 150);
@@ -167,7 +176,9 @@ mod pipewire_capture_tests {
     fn test_linux_portal_capturer_paused_suppresses_frames() {
         let (mut capturer, sender) = LinuxPortalCapturer::new_mock();
         let region = CaptureRegion::new(0, 0, 100, 100);
-        capturer.start_capture(region).expect("start_capture failed");
+        capturer
+            .start_capture(region)
+            .expect("start_capture failed");
 
         capturer.pause_capture().expect("pause failed");
         assert!(capturer.is_paused());
@@ -186,7 +197,10 @@ mod pipewire_capture_tests {
         // Subsequent frame sent after resume is received
         let fresh_frame = generate_test_frame(600, 100, 100);
         sender.try_send(fresh_frame).expect("try_send failed");
-        let received = capturer.capture_frame().unwrap().expect("expected fresh frame");
+        let received = capturer
+            .capture_frame()
+            .unwrap()
+            .expect("expected fresh frame");
         assert_eq!(received.timestamp_ms, 600);
 
         capturer.stop_capture().expect("stop_capture failed");
@@ -196,7 +210,9 @@ mod pipewire_capture_tests {
     fn test_linux_portal_capturer_flush_on_resume() {
         let (mut capturer, sender) = LinuxPortalCapturer::new_mock();
         let region = CaptureRegion::new(0, 0, 100, 100);
-        capturer.start_capture(region).expect("start_capture failed");
+        capturer
+            .start_capture(region)
+            .expect("start_capture failed");
 
         // Send a frame while running
         sender

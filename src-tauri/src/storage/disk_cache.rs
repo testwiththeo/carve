@@ -90,10 +90,7 @@ impl DiskFrameCache {
     /// Open an existing `frames.bin` file and rebuild the in-memory index table.
     pub fn open_existing(file_path: impl AsRef<Path>) -> Result<Self> {
         let file_path = file_path.as_ref().to_path_buf();
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&file_path)?;
+        let mut file = OpenOptions::new().read(true).write(true).open(&file_path)?;
 
         let index = Self::scan_index_from_file(&mut file)?;
 
@@ -146,10 +143,13 @@ impl DiskFrameCache {
 
     /// Read and decompress a frame at the specified index.
     pub fn read_frame(&self, index: usize) -> Result<RawFrame> {
-        let entry = self.index.get(index).ok_or(StorageError::IndexOutOfBounds {
-            index,
-            total: self.index.len(),
-        })?;
+        let entry = self
+            .index
+            .get(index)
+            .ok_or(StorageError::IndexOutOfBounds {
+                index,
+                total: self.index.len(),
+            })?;
 
         let file_ref = self.file.as_ref().ok_or(StorageError::CacheClosed)?;
         let mut file_guard = file_ref.lock().map_err(|_| StorageError::LockPoisoned)?;
@@ -166,46 +166,36 @@ impl DiskFrameCache {
             });
         }
 
-        let timestamp_ms = u64::from_le_bytes(
-            header[4..12]
-                .try_into()
-                .map_err(|_| StorageError::CorruptFrameHeader {
-                    index,
-                    reason: "failed to parse timestamp_ms".into(),
-                })?,
-        );
-        let width = u32::from_le_bytes(
-            header[12..16]
-                .try_into()
-                .map_err(|_| StorageError::CorruptFrameHeader {
-                    index,
-                    reason: "failed to parse width".into(),
-                })?,
-        );
-        let height = u32::from_le_bytes(
-            header[16..20]
-                .try_into()
-                .map_err(|_| StorageError::CorruptFrameHeader {
-                    index,
-                    reason: "failed to parse height".into(),
-                })?,
-        );
-        let uncompressed_len = u32::from_le_bytes(
-            header[20..24]
-                .try_into()
-                .map_err(|_| StorageError::CorruptFrameHeader {
-                    index,
-                    reason: "failed to parse uncompressed_len".into(),
-                })?,
-        );
-        let compressed_len = u32::from_le_bytes(
-            header[24..28]
-                .try_into()
-                .map_err(|_| StorageError::CorruptFrameHeader {
-                    index,
-                    reason: "failed to parse compressed_len".into(),
-                })?,
-        );
+        let timestamp_ms = u64::from_le_bytes(header[4..12].try_into().map_err(|_| {
+            StorageError::CorruptFrameHeader {
+                index,
+                reason: "failed to parse timestamp_ms".into(),
+            }
+        })?);
+        let width = u32::from_le_bytes(header[12..16].try_into().map_err(|_| {
+            StorageError::CorruptFrameHeader {
+                index,
+                reason: "failed to parse width".into(),
+            }
+        })?);
+        let height = u32::from_le_bytes(header[16..20].try_into().map_err(|_| {
+            StorageError::CorruptFrameHeader {
+                index,
+                reason: "failed to parse height".into(),
+            }
+        })?);
+        let uncompressed_len = u32::from_le_bytes(header[20..24].try_into().map_err(|_| {
+            StorageError::CorruptFrameHeader {
+                index,
+                reason: "failed to parse uncompressed_len".into(),
+            }
+        })?);
+        let compressed_len = u32::from_le_bytes(header[24..28].try_into().map_err(|_| {
+            StorageError::CorruptFrameHeader {
+                index,
+                reason: "failed to parse compressed_len".into(),
+            }
+        })?);
 
         if compressed_len != entry.compressed_len || uncompressed_len != entry.uncompressed_len {
             return Err(StorageError::CorruptFrameHeader {

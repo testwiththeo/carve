@@ -253,6 +253,81 @@ mod requesting_portal_phase_tests {
 }
 
 // -----------------------------------------------------------------------------
+// RecordingError boundary shape: what the frontend actually receives
+// -----------------------------------------------------------------------------
+
+mod error_payload_tests {
+    use carve_lib::capture::CaptureError;
+    use carve_lib::window_manager::RecordingError;
+
+    #[test]
+    fn unit_variant_serializes_as_flat_kind_and_message() {
+        let payload = serde_json::to_value(RecordingError::AlreadyRecording).unwrap();
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "kind": "already_recording",
+                "message": "Recording already in progress",
+            })
+        );
+    }
+
+    #[test]
+    fn message_payload_carries_variant_display_message() {
+        let payload = serde_json::to_value(RecordingError::Internal("boom".to_string())).unwrap();
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "kind": "internal",
+                "message": "Internal error: boom",
+            })
+        );
+
+        let payload =
+            serde_json::to_value(RecordingError::WindowError("gone".to_string())).unwrap();
+        assert_eq!(payload["kind"], "window_error");
+        assert_eq!(payload["message"], "Window error: gone");
+    }
+
+    #[test]
+    fn capture_error_surfaces_through_the_boundary() {
+        let source = CaptureError::InvalidBufferSize {
+            expected: 128,
+            actual: 64,
+        };
+        let err: RecordingError = source.clone().into();
+        assert_eq!(err, RecordingError::Capture(source.clone()));
+
+        let payload = serde_json::to_value(&err).unwrap();
+        assert_eq!(payload["kind"], "capture");
+        assert_eq!(payload["message"], source.to_string());
+    }
+
+    #[test]
+    fn kind_tags_are_stable_and_distinct() {
+        let kinds = [
+            RecordingError::InvalidRegion,
+            RecordingError::AlreadyRecording,
+            RecordingError::NotRecording,
+            RecordingError::NotActiveRecording,
+            RecordingError::NotPaused,
+            RecordingError::NotRequestingPortal,
+            RecordingError::WindowError(String::new()),
+            RecordingError::Capture(CaptureError::NotActive),
+            RecordingError::Internal(String::new()),
+        ]
+        .map(|e| e.kind().to_string());
+
+        for i in 0..kinds.len() {
+            assert!(!kinds[i].is_empty());
+            for j in (i + 1)..kinds.len() {
+                assert_ne!(kinds[i], kinds[j], "kind tags must be distinct");
+            }
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Portal acquisition integration: recording controller end-to-end (Linux)
 // -----------------------------------------------------------------------------
 

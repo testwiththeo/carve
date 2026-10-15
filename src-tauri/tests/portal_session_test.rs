@@ -1,7 +1,5 @@
 #[cfg(target_os = "linux")]
 mod linux_portal_session_tests {
-    use std::fs::File;
-    use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
     use ashpd::desktop::screencast::CursorMode;
     use ashpd::desktop::ResponseError;
     use carve_lib::capture::portal_session::{
@@ -9,6 +7,8 @@ mod linux_portal_session_tests {
         request_screencast_session_with_options, PortalStreamInfo,
     };
     use carve_lib::capture::traits::CaptureError;
+    use std::fs::File;
+    use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 
     #[test]
     fn test_portal_stream_info_construction() {
@@ -122,7 +122,7 @@ mod linux_portal_session_tests {
             .build()
             .expect("Failed to build current thread runtime");
 
-        let _ = rt.block_on(async {
+        rt.block_on(async {
             // Calling blocking inside the runtime should delegate safely without panicking on rt.block_on
             let res = request_screencast_session_blocking(CursorMode::Embedded, false);
             assert!(res.is_ok() || res.is_err());
@@ -136,7 +136,7 @@ mod linux_portal_session_tests {
             .enable_all()
             .build();
         if let Ok(rt) = rt {
-            let _ = rt.block_on(async {
+            rt.block_on(async {
                 let res = request_screencast_session_blocking(CursorMode::Embedded, false);
                 assert!(res.is_ok() || res.is_err());
             });

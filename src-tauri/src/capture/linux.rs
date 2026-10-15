@@ -111,9 +111,9 @@ impl LinuxPortalCapturer {
     #[cfg(target_os = "linux")]
     pub fn inject_frame(&mut self, frame: RawFrame) -> Result<(), CaptureError> {
         if let Some(consumer) = self.stream_consumer.as_ref() {
-            consumer.send_synthetic_frame(frame).map_err(|e| {
-                CaptureError::BackendError(format!("Failed to inject frame: {e:?}"))
-            })
+            consumer
+                .send_synthetic_frame(frame)
+                .map_err(|e| CaptureError::BackendError(format!("Failed to inject frame: {e:?}")))
         } else {
             Err(CaptureError::NotActive)
         }
@@ -151,10 +151,11 @@ impl ScreenCapturer for LinuxPortalCapturer {
                     let (consumer, _) = PipeWireStreamConsumer::new_mock();
                     self.stream_consumer = Some(consumer);
                 } else {
-                    let stream_info = crate::capture::portal_session::request_screencast_session_blocking(
-                        ashpd::desktop::screencast::CursorMode::Embedded,
-                        false,
-                    )?;
+                    let stream_info =
+                        crate::capture::portal_session::request_screencast_session_blocking(
+                            ashpd::desktop::screencast::CursorMode::Embedded,
+                            false,
+                        )?;
                     let node_id = stream_info.node_id;
                     let consumer = PipeWireStreamConsumer::connect(stream_info.fd, node_id)?;
                     self.pipewire_node_id = Some(node_id);

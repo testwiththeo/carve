@@ -1,6 +1,6 @@
+use image::{Rgba, RgbaImage};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use image::{Rgba, RgbaImage};
 
 use crate::encoder::{encode_gif, EncoderError, GifExportOptions};
 use crate::model::{TimedVectorLedger, VectorElement, VectorToolKind};
@@ -85,7 +85,7 @@ pub fn composite_frame_with_vectors(
     let mut img = RgbaImage::new(width, height);
 
     // 1. Copy BGRA raw frame into RGBA image
-    for (i, chunk) in raw_frame.bgra_data.chunks_exact(4).enumerate() {
+    for (i, chunk) in raw_frame.bgra_data.as_chunks::<4>().0.iter().enumerate() {
         let x = (i as u32) % width;
         let y = (i as u32) / width;
         if x < width && y < height {
@@ -113,7 +113,11 @@ fn apply_vector_to_image(img: &mut RgbaImage, elem: &VectorElement) {
     let x = elem.data.get("x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
     let y = elem.data.get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
     let w = elem.data.get("width").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-    let h = elem.data.get("height").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+    let h = elem
+        .data
+        .get("height")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as i32;
     let stroke_str = elem
         .data
         .get("stroke")
@@ -187,7 +191,7 @@ fn apply_vector_to_image(img: &mut RgbaImage, elem: &VectorElement) {
             }
 
             // Draw ellipse border
-            let perimeter_steps = ((rx + ry) * 3.14).max(10.0) as usize * 2;
+            let perimeter_steps = ((rx + ry) * std::f64::consts::PI).max(10.0) as usize * 2;
             for i in 0..perimeter_steps {
                 let theta = (i as f64 / perimeter_steps as f64) * 2.0 * std::f64::consts::PI;
                 let px = (cx as f64 + rx * theta.cos()).round() as i32;
@@ -298,13 +302,9 @@ fn apply_vector_to_image(img: &mut RgbaImage, elem: &VectorElement) {
                         }
                     }
 
-                    if count > 0 {
-                        let avg_color = Rgba([
-                            (r_sum / count) as u8,
-                            (g_sum / count) as u8,
-                            (b_sum / count) as u8,
-                            255,
-                        ]);
+                    let avg = |sum: u32| sum.checked_div(count).map(|v| v as u8);
+                    if let (Some(r), Some(g), Some(b)) = (avg(r_sum), avg(g_sum), avg(b_sum)) {
+                        let avg_color = Rgba([r, g, b, 255]);
                         for py in by..block_end_y {
                             for px in bx..block_end_x {
                                 img.put_pixel(px as u32, py as u32, avg_color);
@@ -507,7 +507,7 @@ pub fn run_mock_export_pipeline(output_path: &Path) -> Result<(), Box<dyn std::e
     for i in 0..10 {
         let mut bgra = vec![0u8; (width * height * 4) as usize];
         let color_offset = (i * 10) as u8;
-        for chunk in bgra.chunks_exact_mut(4) {
+        for chunk in bgra.as_chunks_mut::<4>().0 {
             chunk[0] = 50 + color_offset; // B
             chunk[1] = 80 + color_offset; // G
             chunk[2] = 100 + color_offset; // R

@@ -284,4 +284,3 @@ fn test_platform_capturers_and_factory() {
         assert!(matches!(res, Err(CaptureError::BackendError(_))));
     }
 }
-

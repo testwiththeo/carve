@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
 
 /// Supported vector annotation tool kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -14,7 +14,11 @@ pub enum VectorToolKind {
     Ellipse,
     #[serde(alias = "Pencil", alias = "pencil")]
     Pencil,
-    #[serde(alias = "CounterBadge", alias = "counterBadge", alias = "counter_badge")]
+    #[serde(
+        alias = "CounterBadge",
+        alias = "counterBadge",
+        alias = "counter_badge"
+    )]
     CounterBadge,
     #[serde(alias = "Text", alias = "text")]
     Text,
