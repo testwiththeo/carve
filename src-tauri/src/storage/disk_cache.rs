@@ -166,36 +166,26 @@ impl DiskFrameCache {
             });
         }
 
-        let timestamp_ms = u64::from_le_bytes(header[4..12].try_into().map_err(|_| {
-            StorageError::CorruptFrameHeader {
-                index,
-                reason: "failed to parse timestamp_ms".into(),
-            }
-        })?);
-        let width = u32::from_le_bytes(header[12..16].try_into().map_err(|_| {
-            StorageError::CorruptFrameHeader {
-                index,
-                reason: "failed to parse width".into(),
-            }
-        })?);
-        let height = u32::from_le_bytes(header[16..20].try_into().map_err(|_| {
-            StorageError::CorruptFrameHeader {
-                index,
-                reason: "failed to parse height".into(),
-            }
-        })?);
-        let uncompressed_len = u32::from_le_bytes(header[20..24].try_into().map_err(|_| {
-            StorageError::CorruptFrameHeader {
-                index,
-                reason: "failed to parse uncompressed_len".into(),
-            }
-        })?);
-        let compressed_len = u32::from_le_bytes(header[24..28].try_into().map_err(|_| {
-            StorageError::CorruptFrameHeader {
-                index,
-                reason: "failed to parse compressed_len".into(),
-            }
-        })?);
+        let timestamp_ms = u64::from_le_bytes(Self::parse_header_le::<8>(
+            &header,
+            4,
+            index,
+            "timestamp_ms",
+        )?);
+        let width = u32::from_le_bytes(Self::parse_header_le::<4>(&header, 12, index, "width")?);
+        let height = u32::from_le_bytes(Self::parse_header_le::<4>(&header, 16, index, "height")?);
+        let uncompressed_len = u32::from_le_bytes(Self::parse_header_le::<4>(
+            &header,
+            20,
+            index,
+            "uncompressed_len",
+        )?);
+        let compressed_len = u32::from_le_bytes(Self::parse_header_le::<4>(
+            &header,
+            24,
+            index,
+            "compressed_len",
+        )?);
 
         if compressed_len != entry.compressed_len || uncompressed_len != entry.uncompressed_len {
             return Err(StorageError::CorruptFrameHeader {
@@ -246,6 +236,26 @@ impl DiskFrameCache {
         self.delete_on_drop = delete;
     }
 
+    /// Parses a little-endian field from the fixed-size frame header.
+    ///
+    /// The header is a compile-time-known `[u8; HEADER_SIZE]`, so a short slice
+    /// can only mean a broken header layout — surfaced as `CorruptFrameHeader`
+    /// rather than an unchecked unwrap.
+    fn parse_header_le<const N: usize>(
+        header: &[u8],
+        offset: usize,
+        index: usize,
+        field: &'static str,
+    ) -> Result<[u8; N]> {
+        header
+            .get(offset..offset + N)
+            .and_then(|bytes| bytes.try_into().ok())
+            .ok_or(StorageError::CorruptFrameHeader {
+                index,
+                reason: format!("failed to parse {field}: need {N} bytes at offset {offset}"),
+            })
+    }
+
     /// Scan a `frames.bin` file and rebuild index entries.
     fn scan_index_from_file(file: &mut File) -> Result<Vec<FrameIndexEntry>> {
         let mut index = Vec::new();
@@ -271,11 +281,36 @@ impl DiskFrameCache {
                 });
             }
 
-            let timestamp_ms = u64::from_le_bytes(header[4..12].try_into().unwrap());
-            let width = u32::from_le_bytes(header[12..16].try_into().unwrap());
-            let height = u32::from_le_bytes(header[16..20].try_into().unwrap());
-            let uncompressed_len = u32::from_le_bytes(header[20..24].try_into().unwrap());
-            let compressed_len = u32::from_le_bytes(header[24..28].try_into().unwrap());
+            let timestamp_ms = u64::from_le_bytes(Self::parse_header_le::<8>(
+                &header,
+                4,
+                index.len(),
+                "timestamp_ms",
+            )?);
+            let width = u32::from_le_bytes(Self::parse_header_le::<4>(
+                &header,
+                12,
+                index.len(),
+                "width",
+            )?);
+            let height = u32::from_le_bytes(Self::parse_header_le::<4>(
+                &header,
+                16,
+                index.len(),
+                "height",
+            )?);
+            let uncompressed_len = u32::from_le_bytes(Self::parse_header_le::<4>(
+                &header,
+                20,
+                index.len(),
+                "uncompressed_len",
+            )?);
+            let compressed_len = u32::from_le_bytes(Self::parse_header_le::<4>(
+                &header,
+                24,
+                index.len(),
+                "compressed_len",
+            )?);
 
             index.push(FrameIndexEntry {
                 offset: current_offset,
