@@ -418,7 +418,7 @@ impl<'a> Iterator for SessionFrameIterator<'a> {
         let raw = match self.cache.read_frame(idx) {
             Ok(f) => f,
             Err(e) => {
-                eprintln!("Failed to read frame at index {}: {}", idx, e);
+                tracing::warn!(index = idx, error = %e, "dropping unreadable frame from export");
                 return None;
             }
         };
@@ -446,6 +446,7 @@ impl<'a> Iterator for SessionFrameIterator<'a> {
 /// Export a recording session by lazily iterating through cached frames in `[trim_start_ms, trim_end_ms]`,
 /// compositing active vector elements on the fly, and streaming into `encode_gif`.
 /// Guarantees bounded RAM consumption of a single frame (~2-8 MB) regardless of capture length.
+#[tracing::instrument(skip(cache, ledger, options))]
 pub fn export_session_to_gif(
     cache: &DiskFrameCache,
     ledger: &TimedVectorLedger,

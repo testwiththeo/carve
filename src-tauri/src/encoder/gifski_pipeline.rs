@@ -148,7 +148,8 @@ where
         writer_res
     });
 
-    if run_res.is_err() {
+    if let Err(err) = &run_res {
+        tracing::warn!(error = %err, "gif encode failed; removing partial output");
         let _ = std::fs::remove_file(output_path);
     }
 

@@ -21,6 +21,16 @@ serde_json = "1.0"
 tauri = { version = "2.0", features = [] }
 tempfile = "3.27.0"
 thiserror = "2.0.21"
+# Structured logging across capture -> encode -> export.
+tracing = "0.1"
+# App-binary tracing subscriber. Optional so the lib stays subscriber-agnostic;
+# enabled by default via the `app-logging` feature.
+tracing-subscriber = { version = "0.3", optional = true }
+
+[features]
+# Installs a stdout tracing subscriber in `init_logging()` for the desktop app.
+default = ["app-logging"]
+app-logging = ["dep:tracing-subscriber"]
 
 [dev-dependencies]
 serde_json = "1.0"

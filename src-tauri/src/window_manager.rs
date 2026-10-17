@@ -358,6 +358,7 @@ fn rollback_portal_request(state: &Mutex<RecordingState>) {
 ///   `CaptureError::Cancelled` — never a panic, never a wrapped backend error.
 /// - A merely unavailable portal (missing service, headless session) degrades
 ///   gracefully to `MockCapturer` frames.
+#[tracing::instrument(skip(state, acquisition))]
 pub fn start_recording_session(
     state: &Mutex<RecordingState>,
     region: CaptureRegion,
@@ -384,12 +385,14 @@ pub fn start_recording_session(
                 Ok(()) => Ok(StartedCapture { capturer, backend }),
                 Err(err) => {
                     // The session was stopped while the prompt was pending.
+                    tracing::warn!(error = %err, "session stopped during portal prompt; stopping capturer");
                     let _ = capturer.stop_capture();
                     Err(recording_err(err))
                 }
             }
         }
         Err(err) => {
+            tracing::warn!(error = %err, "capture acquisition failed; rolling back portal request");
             rollback_portal_request(state);
             Err(err)
         }
@@ -577,7 +580,9 @@ pub mod commands {
 
         let mut capturer = started.capturer;
         let mut fallback_mock = MockCapturer::new();
-        let _ = fallback_mock.start_capture(region);
+        if let Err(e) = fallback_mock.start_capture(region) {
+            tracing::warn!(error = %e, "mock fallback capturer failed to start");
+        }
         let start_time = Instant::now();
 
         let thread_handle = std::thread::spawn(move || {
@@ -605,7 +610,9 @@ pub mod commands {
 
                 if let Ok(mut guard) = session_cache.lock() {
                     if let Some(ref mut c) = *guard {
-                        let _ = c.append_frame(&frame);
+                        if let Err(e) = c.append_frame(&frame) {
+                            tracing::warn!(error = %e, "failed to append captured frame to cache");
+                        }
                     }
                 }
 
@@ -634,6 +641,7 @@ pub mod commands {
 
         // Show live overlay over the selected region
         show_overlay(&app, region)?;
+        tracing::info!(?region, backend = ?started.backend, "recording started");
         Ok(())
     }
 
@@ -660,6 +668,7 @@ pub mod commands {
         }
 
         let _ = hide_overlay(&app);
+        tracing::info!(?region, "recording stopped");
         Ok(region)
     }
 

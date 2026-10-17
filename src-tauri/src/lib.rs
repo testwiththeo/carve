@@ -12,6 +12,18 @@ pub use export::{
     run_mock_export_pipeline, ExportError, RawCompositedFrame, SessionState,
 };
 
+/// Initializes the process-wide tracing subscriber for the desktop app.
+///
+/// No-op when the `app-logging` feature is disabled: library consumers
+/// install their own subscriber; emit sites stay unconditional.
+pub fn init_logging() {
+    #[cfg(feature = "app-logging")]
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .compact()
+        .init();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
