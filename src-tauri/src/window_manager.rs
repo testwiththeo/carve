@@ -711,8 +711,11 @@ pub mod commands {
     }
 
     /// Configures pointer event clickthrough for the live overlay window.
-    #[tauri::command]
-    pub fn set_overlay_clickthrough<R: Runtime>(
+    ///
+    /// JS command name stays `set_overlay_clickthrough` (frontend contract);
+    /// the Rust fn is named for the command glue it is.
+    #[tauri::command(rename = "set_overlay_clickthrough")]
+    pub fn overlay_clickthrough<R: Runtime>(
         app: AppHandle<R>,
         enabled: bool,
     ) -> Result<(), RecordingError> {
@@ -720,5 +723,4 @@ pub mod commands {
     }
 }
 
-pub use commands::set_overlay_clickthrough as set_overlay_clickthrough_cmd;
 pub use commands::{pause_recording, resume_recording, start_recording, stop_recording};

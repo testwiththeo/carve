@@ -36,7 +36,7 @@ pub fn run() {
             window_manager::commands::stop_recording,
             window_manager::commands::pause_recording,
             window_manager::commands::resume_recording,
-            window_manager::commands::set_overlay_clickthrough,
+            window_manager::commands::overlay_clickthrough,
             export::commands::export_gif,
             export::commands::render_frame_with_vectors,
             export::commands::update_vector_ledger,
