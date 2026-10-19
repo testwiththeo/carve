@@ -4,6 +4,7 @@ pub mod capture;
 pub mod encoder;
 pub mod export;
 pub mod model;
+pub mod recording;
 pub mod storage;
 pub mod window_manager;
 
