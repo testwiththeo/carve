@@ -328,6 +328,129 @@ mod error_payload_tests {
 }
 
 // -----------------------------------------------------------------------------
+// Invalid-transition matrix: every rejected transition must leave the state
+// unchanged (rollback semantics), not just return an error.
+// -----------------------------------------------------------------------------
+
+mod invalid_transition_matrix_tests {
+    use carve_lib::capture::CaptureRegion;
+    use carve_lib::window_manager::{RecordingError, RecordingState};
+
+    fn region() -> CaptureRegion {
+        CaptureRegion::new(1, 2, 64, 48)
+    }
+
+    #[test]
+    fn default_and_new_are_idle() {
+        assert_eq!(RecordingState::default(), RecordingState::Idle);
+        assert_eq!(RecordingState::new(), RecordingState::Idle);
+        assert!(RecordingState::new().is_idle());
+    }
+
+    #[test]
+    fn start_rejected_while_requesting_portal() {
+        let mut state = RecordingState::new();
+        state.begin_portal_request(region()).unwrap();
+
+        assert_eq!(state.start(region()), Err(RecordingError::AlreadyRecording));
+        assert!(state.is_requesting_portal());
+        assert!(!state.is_recording());
+        assert_eq!(state.region(), Some(&region()));
+    }
+
+    #[test]
+    fn start_rejected_while_paused() {
+        let mut state = RecordingState::new();
+        state.start(region()).unwrap();
+        state.pause().unwrap();
+
+        assert_eq!(state.start(region()), Err(RecordingError::AlreadyRecording));
+        assert!(state.is_paused());
+        assert_eq!(state.region(), Some(&region()));
+    }
+
+    #[test]
+    fn begin_portal_request_rejected_while_paused() {
+        let mut state = RecordingState::new();
+        state.start(region()).unwrap();
+        state.pause().unwrap();
+
+        assert_eq!(
+            state.begin_portal_request(region()),
+            Err(RecordingError::AlreadyRecording)
+        );
+        assert!(state.is_paused());
+    }
+
+    #[test]
+    fn portal_acquired_rejected_while_paused() {
+        let mut state = RecordingState::new();
+        state.start(region()).unwrap();
+        state.pause().unwrap();
+
+        assert_eq!(
+            state.portal_acquired(),
+            Err(RecordingError::NotRequestingPortal)
+        );
+        assert!(state.is_paused());
+    }
+
+    #[test]
+    fn cancel_portal_request_rejected_while_recording() {
+        let mut state = RecordingState::new();
+        state.start(region()).unwrap();
+
+        assert_eq!(
+            state.cancel_portal_request(),
+            Err(RecordingError::NotRequestingPortal)
+        );
+        assert!(state.is_recording());
+        assert_eq!(state.region(), Some(&region()));
+    }
+
+    #[test]
+    fn cancel_portal_request_rejected_while_paused() {
+        let mut state = RecordingState::new();
+        state.start(region()).unwrap();
+        state.pause().unwrap();
+
+        assert_eq!(
+            state.cancel_portal_request(),
+            Err(RecordingError::NotRequestingPortal)
+        );
+        assert!(state.is_paused());
+    }
+
+    #[test]
+    fn paused_region_is_preserved_through_pause_stop_cycle() {
+        let mut state = RecordingState::new();
+        state.start(region()).unwrap();
+        state.pause().unwrap();
+
+        // Stop from Paused must surface the original region and reset to Idle.
+        let stopped = state.stop().unwrap();
+        assert_eq!(stopped, region());
+        assert!(state.is_idle());
+        assert_eq!(state.region(), None);
+    }
+
+    #[test]
+    fn invalid_region_in_begin_portal_request_matches_start_semantics() {
+        let mut state = RecordingState::new();
+        // Zero-height is rejected, state stays usable.
+        assert_eq!(
+            state.begin_portal_request(CaptureRegion::new(0, 0, 10, 0)),
+            Err(RecordingError::InvalidRegion)
+        );
+        assert!(state.is_idle());
+
+        // After the rejection a valid request still succeeds.
+        state.begin_portal_request(region()).unwrap();
+        assert!(state.is_requesting_portal());
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Portal acquisition integration: recording controller end-to-end (Linux)
 // -----------------------------------------------------------------------------
 
