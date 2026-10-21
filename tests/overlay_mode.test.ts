@@ -20,7 +20,26 @@ describe('overlay_mode: Wayland detection', () => {
 
   it('defaults to false when environment is empty or undefined', () => {
     expect(isWaylandEnvironment({})).toBe(false);
-    expect(isWaylandEnvironment(undefined)).toBe(false);
+
+    // The no-arg form falls back to the host environment; stub it so this
+    // assertion is hermetic on both X11 and Wayland machines.
+    vi.stubEnv('XDG_SESSION_TYPE', '');
+    vi.stubEnv('WAYLAND_DISPLAY', '');
+    try {
+      expect(isWaylandEnvironment(undefined)).toBe(false);
+      expect(isWaylandEnvironment()).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('no-arg form detects Wayland from the host environment', () => {
+    vi.stubEnv('WAYLAND_DISPLAY', 'wayland-0');
+    try {
+      expect(isWaylandEnvironment()).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 
